@@ -116,8 +116,44 @@ def rot_center(image, angle):
     rot_image = rot_image.subsurface(rot_rect).copy()
     return rot_image
 
+def get_boat_COG(boat_vel_x,boat_vel_y):# boat true heading
+    global debug
+    if(boat_vel_x>0.001 and boat_vel_y>0.001): # tolerances for overflow errs
+        boat_abs_spd_dir = np.arctan(boat_vel_y/boat_vel_x)
+##        print('quad A non axial')
+        debug+= ' quad A '
+    elif boat_vel_x<-0.001 and boat_vel_y>0.001:
+        boat_abs_spd_dir = np.pi + np.arctan(boat_vel_y/boat_vel_x)
+##        print('quad B non axial')
+        debug += 'quad B'
+    elif boat_vel_x<-0.001 and boat_vel_y<-0.001:
+        boat_abs_spd_dir = np.deg2rad(180)+np.arctan(boat_vel_y/boat_vel_x)
+##        print('quad C non axial')'
+        debug += 'quad C'
+    elif boat_vel_x>0.001 and boat_vel_y<-0.001:
+        boat_abs_spd_dir = np.pi*2+np.arctan(boat_vel_y/boat_vel_x)
+##        print('quad D non axial')
+        debug += 'quad D'
+    elif (boat_vel_y>0 and abs(boat_vel_y)>abs(boat_vel_x)):
+        boat_abs_spd_dir = np.pi/2
+##        print('moving + y')
+    elif (boat_vel_y<0 and abs(boat_vel_y)>abs(boat_vel_x)):
+        boat_abs_spd_dir = 3*np.pi/2
+##        print('moving - y')
+    elif(boat_vel_x>0 and abs(boat_vel_y)<abs(boat_vel_x)):
+        boat_abs_spd_dir = 0
+##        print('moving + x')
+    elif(boat_vel_x<0 and abs(boat_vel_y)<abs(boat_vel_x)):
+        boat_abs_spd_dir = np.pi
+##        print('moving - x')
+    else:
+        boat_abs_spd_dir = 0
+        print('not moving')
+    return boat_abs_spd_dir
+
 Autonomous = False
 while t < duration*1000 and not crashed:
+    debug = ' '
 ##        print('tic')
     # update position, uses velocities and accels stale by 1 time step
     boat_pos_x = boat_pos_x + boat_vel_x*time_step+1/2*boat_acc_x*np.square(time_step)
@@ -130,34 +166,10 @@ while t < duration*1000 and not crashed:
     boat_vel_x = boat_vel_x+boat_acc_x*time_step
     boat_vel_y = boat_vel_y+boat_acc_y*time_step
     boat_vel_abs = np.sqrt(np.square(boat_vel_x)+np.square(boat_vel_y))
-    # boat true heading 
-    if(boat_vel_x>0.001 and boat_vel_y>0.001): # tolerances for overflow errs
-        boat_abs_spd_dir = np.arctan(boat_vel_y/boat_vel_x)
-        print('quad A non axial')
-    elif boat_vel_x<-0.001 and boat_vel_y>0.001:
-        boat_abs_spd_dir = np.deg2rad(360)-np.arctan(boat_vel_y/boat_vel_x)
-        print('quad B non axial')
-    elif boat_vel_x<-0.001 and boat_vel_y<-0.001:
-        boat_abs_spd_dir = np.deg2rad(180)+np.arctan(boat_vel_y/boat_vel_x)
-        print('quad C non axial')
-    elif boat_vel_x>0.001 and boat_vel_y<-0.001:
-        boat_abs_spd_dir = np.deg2rad(360)-np.arctan(boat_vel_y/boat_vel_x)
-        print('quad D non axial')
-    elif (boat_vel_y>0 and abs(boat_vel_y)>abs(boat_vel_x)):
-        boat_abs_spd_dir = np.pi/2
-        print('moving + y')
-    elif (boat_vel_y<0 and abs(boat_vel_y)>abs(boat_vel_x)):
-        boat_abs_spd_dir = 3*np.pi/2
-        print('moving - y')
-    elif(boat_vel_x>0 and abs(boat_vel_y)<abs(boat_vel_x)):
-        boat_abs_spd_dir = 0
-        print('moving + x')
-    elif(boat_vel_x<0 and abs(boat_vel_y)<abs(boat_vel_x)):
-        boat_abs_spd_dir = np.pi
-        print('moving - x')
-    else:
-        boat_abs_spd_dir = 0
-        print('not moving')
+    
+    boat_abs_spd_dir = get_boat_COG(boat_vel_x,boat_vel_y)
+    
+##    debug += str(boat_vel_abs)+' '+str(np.rad2deg(boat_abs_spd_dir))
     # log abs speed
 ##    bt_spd_abs.append(boat_vel_abs)
     
@@ -181,7 +193,7 @@ while t < duration*1000 and not crashed:
     else:
         aoa = abs(wind_angle-boat_heading)-np.deg2rad(90)*(1-sail_trim_perc)
 ##    if aoa > np.pi: aoa -= np.pi
-    print('aoa:',np.rad2deg(aoa),'boat to wind:',np.rad2deg(wind_angle-boat_heading))
+##    print('aoa:',np.rad2deg(aoa),'boat to wind:',np.rad2deg(wind_angle-boat_heading))
     ##  TODO CONSTRAIN SAIL EASE TO NOT EASE PAST HEAD TO WIND
     # following Cl Cd functions determined in octave plus gut/experience/theory
     if aoa >= np.deg2rad(5) and aoa <= np.deg2rad(50):
@@ -209,9 +221,10 @@ while t < duration*1000 and not crashed:
         else: Sail_L = -1/2*rho_air*sail_area*Cl*np.square(apparent_wind_speed)
     Sail_D = 1/2*rho_air*sail_area*Cd*np.square(apparent_wind_speed)*1/10 # 1/10 fudge factor
 
+    debug += 'aoa:'+str(np.rad2deg(aoa))
     # hydro foil lift and drag
     h_aoa = abs(boat_abs_spd_dir - boat_heading)
-    if h_aoa > np.pi: h_aoa -= np.pi
+    if h_aoa > np.pi: h_aoa = np.pi*2 - h_aoa
 ##    print('haoa:',np.rad2deg(h_aoa))
     if h_aoa > np.deg2rad(0) and h_aoa < np.deg2rad(50):
         if h_aoa >= np.deg2rad(15): h_Cl = 0.025*np.rad2deg(h_aoa) + 0.35
@@ -220,8 +233,10 @@ while t < duration*1000 and not crashed:
     else:
         h_Cl = 0
         h_Cd = 3
-    if boat_heading > boat_abs_spd_dir: h_lift_dir = boat_abs_spd_dir + np.deg2rad(90)
+    if boat_heading-boat_abs_spd_dir >= 0 and boat_heading-boat_abs_spd_dir <= np.deg2rad(180) or boat_heading-boat_abs_spd_dir <= np.deg2rad(-180):
+        h_lift_dir = boat_abs_spd_dir + np.deg2rad(90)
     else: h_lift_dir = boat_abs_spd_dir - np.deg2rad(90)
+    debug += 'haoa:'+str(np.rad2deg(h_aoa))+'lift dir:'+str(np.rad2deg(h_lift_dir))
     hydro_L = 1/2*rho_water*h_foil_area*h_Cl*np.square(boat_vel_abs)/10 # 1/100 fudge factor
     hydro_D = 1/2*rho_water*h_foil_area*h_Cd*np.square(boat_vel_abs)/10 # 1/100 fudge factor
     status += ' '+str(hydro_L) + ' '+str(hydro_D)+' '+ str(Sail_L)+' '+str(Sail_D)
@@ -237,18 +252,18 @@ while t < duration*1000 and not crashed:
     boat_acc_x = (
         boat_wind_drag_force*np.cos(wind_angle+np.deg2rad(180))         # wind drag
         - boat_visc_hull_drag*np.cos(boat_abs_spd_dir)                  # hull viscous drag
-##        + Sail_D*np.cos(wind_angle+np.deg2rad(180))                     # sail drag force
+        + Sail_D*np.cos(wind_angle+np.deg2rad(180))                     # sail drag force
         +Sail_L*np.cos(wind_angle-np.pi/2) # major prob???             # sail life force
-##        - hydro_D*np.cos(boat_abs_spd_dir)                              # hydro foil drag force
-##        + hydro_L*np.cos(h_lift_dir)                                    # hydro foil lift force
+        - hydro_D*np.cos(boat_abs_spd_dir)                              # hydro foil drag force
+        + hydro_L*np.cos(h_lift_dir)                                    # hydro foil lift force
                   )/boat_mass
     boat_acc_y = (
         boat_wind_drag_force*np.sin(wind_angle+np.deg2rad(180))         # wind drag
-##        - boat_visc_hull_drag*np.sin(boat_abs_spd_dir)                  # hull viscous drag
-##        + Sail_D*np.sin(wind_angle+np.deg2rad(180))                     # sail drag force
+        - boat_visc_hull_drag*np.sin(boat_abs_spd_dir)                  # hull viscous drag
+        + Sail_D*np.sin(wind_angle+np.deg2rad(180))                     # sail drag force
         + Sail_L*np.sin(wind_angle-np.pi/2) # major prob???             # sail life force
-##        - hydro_D*np.sin(boat_abs_spd_dir)                              # hydro foil drag force
-##        + hydro_L*np.sin(h_lift_dir)                                    # hydro foil lift force
+        - hydro_D*np.sin(boat_abs_spd_dir)                              # hydro foil drag force
+        + hydro_L*np.sin(h_lift_dir)                                    # hydro foil lift force
         )/boat_mass
 ##    print(status)
     # update time
@@ -269,7 +284,7 @@ while t < duration*1000 and not crashed:
     for pix in Pixels:
         piecepos(gameDisplay,pix.pos)
         new_x = pix.pos[0] - boat_vel_abs*2*np.cos(boat_abs_spd_dir)
-        new_y = pix.pos[1] - boat_vel_abs*2*np.sin(boat_abs_spd_dir)
+        new_y = pix.pos[1] + boat_vel_abs*2*np.sin(boat_abs_spd_dir)
         pix.NewPos([new_x,new_y])
         pix.EdgeOver(pix.pos,direction)
 ##    print(direction,np.cos(direction),np.sin(direction))
@@ -457,6 +472,7 @@ while t < duration*1000 and not crashed:
 
     if rand_act_prob > 0.1 and np.mod(t,300) == 0:
         rand_act_prob -= .1 # increasingly rely on RL predictions
+    print(debug)
         
 ##    gameDisplay.fill(white)
 ##    for pix in Pixels:
