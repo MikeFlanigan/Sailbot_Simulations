@@ -556,7 +556,7 @@ try:
                             Ybatch = np.roll(Ybatch,1,0)
                             Xbatch[0,:] = oldX
                             Ybatch[0,:] = np.reshape(correction,(1,6))
-                            model.fit(Xbatch,Ybatch,batch_size = batchSize, nb_epoch = 1, verbose = 0) # should add custome call back
+                            model.fit(Xbatch,Ybatch,batch_size = batchSize, nb_epoch = 1, verbose = 0) # should add custom call back
                         else: # build up model memory
                             Xbatch = np.concatenate((Xbatch,newX),0)
                             Ybatch = np.concatenate((Ybatch,np.reshape(correction,(1,6))),0)
