@@ -10,8 +10,8 @@ import cv2
 ##save_data = True
 save_data = False
 # load X and Y data to concatenate to
-X = np.load('X_1.npy')
-Y = np.load('Y_1.npy')
+##X = np.load('X_1.npy')
+##Y = np.load('Y_1.npy')
 
 RL = True
 ##RL = False
@@ -24,12 +24,13 @@ r_count = 0
 p_count = 0
 R_reward_hist = []
 S_reward_hist = []
+reward_hist = []
 wpt_hit_hist = []
 gamma = 1.1 # applies a reward for very confident next steps
 
 
 duration = 500 # seconds
-epochs = 50 ## still use main duration
+epochs = 300 ## still use main duration
 
 # weights display
 weights_img = np.ones((150,100))
@@ -95,7 +96,14 @@ img = pygame.transform.rotate(img,90-np.rad2deg(direction))
 ### End UI
 
 def gen_waypt():
-    pos = (int((-.5+np.random.rand(1)[0])*2000+display_width/2),int((-.5+np.random.rand(1)[0])*2000+display_height/2))
+    global Xbatch, Ybatch, last_action_list
+    pos = (int((-.5+np.random.rand(1)[0])*2000+display_width/2),int((.5+np.random.rand(1)[0])*2000+display_height/2))
+    try: del Xbatch
+    except NameError: pass
+    try: del Ybatch
+    except NameError: pass
+    try: del last_action_list
+    except NameError: pass
     return pos
 
 waypoint_rad = 100
@@ -185,11 +193,11 @@ try:
         boat_pos_y = 100
 
         boat_yaw = 0 # units? looking down, CCW positive
-        boat_heading = wind_angle+np.deg2rad(45)
+        boat_heading = wind_angle+np.deg2rad(np.random.rand(1)[0]*90+90)
         boat_cog = 0 # needed?
         boat_abs_spd_dir = 0
 
-        sail_trim_perc = 1.00 # percentage 0 - 100%, 100 = algned with boat heading, 0 = 90 degrees to boat heading
+        sail_trim_perc = np.random.rand(1)[0] # percentage 0 - 100%, 100 = algned with boat heading, 0 = 90 degrees to boat heading
 
         waypoint = gen_waypt()
         pygame.draw.circle(gameDisplay,red,waypoint,waypoint_rad,0)
@@ -383,8 +391,9 @@ try:
             dist_to_waypoint = np.sqrt(np.square((display_width/2-img_width/2)-waypoint[0])+np.square((display_width/2-img_width/2)-waypoint[1]))
             wpt_hit = 0
             wpt_reward = 0
+            gen_new_wpt = False
             if dist_to_waypoint < 100:
-                waypoint = gen_waypt()
+                gen_new_wpt = True
                 wpt_reward = 10
                 wpt_hit = 10
         ##    print('dist to waypoint:',dist_to_waypoint)
@@ -427,6 +436,9 @@ try:
 
                 course_to_waypoint_inputs = np.roll(course_to_waypoint_inputs,1)
                 course_to_waypoint_inputs[0] = course_to_waypoint
+
+                dist_to_waypoint_inputs = np.roll(dist_to_waypoint_inputs,1)
+                dist_to_waypoint_inputs[0] = dist_to_waypoint/1000 # crude attempt to scale features
             except NameError:
                 boat_vel_abs_inputs = np.ones((1,4))*boat_vel_abs
                 boat_abs_spd_dir_inputs = np.ones((1,4))*boat_abs_spd_dir
@@ -434,6 +446,7 @@ try:
                 sail_trim_perc_inputs = np.ones((1,4))*sail_trim_perc
                 aoa_inputs = np.ones((1,4))*aoa
                 course_to_waypoint_inputs = np.ones((1,4))*course_to_waypoint
+                dist_to_waypoint_inputs = np.ones((1,4))*dist_to_waypoint/1000
 
             VMG = boat_vel_abs*np.cos(abs(course_to_waypoint-boat_abs_spd_dir))
         ##    print('VMG:',VMG,boat_vel_abs,'heading',(boat_heading),'course',boat_abs_spd_dir)
@@ -442,7 +455,8 @@ try:
                                    boat_heading_inputs,
                                    sail_trim_perc_inputs,
                                    aoa_inputs,
-                                   course_to_waypoint_inputs),1) # ignored distance to waypoint
+                                   course_to_waypoint_inputs,
+                                   dist_to_waypoint_inputs),1) # ignored distance to waypoint
 
         ##    print(np.reshape(newX,(4,6)))
         ##    print(model.predict(newX),Autonomous)
@@ -502,69 +516,91 @@ try:
                 RL_debug = ' '
                 # predict confidence of next move for reward
                 qval_new = model.predict(newX)[0]
-                # calculate reward 
+                # calculate reward
+                last_action = np.zeros((1,6))
                 try:
                     correction = qval
                     reward = 0
                     S_reward = 0
                     R_reward = 0
 
-                    if not hydro_stall:
-                        reward += boat_vel_abs + 1
-                    else: # hydro stalled 
-                        reward += -1/20*np.rad2deg(h_aoa)
-                        if R_act != 2 and R_act == last_Ract:
-                            R_reward += 1 # reward consistency in getting out of irons
-                        elif R_act == 2: R_reward -= 1
-                        elif R_act != 2 and last_Ract != 2:
-                            if Ract != last_Ract:
-                                R_reward -= 1
-##                        
-                    reward += gamma*(np.argmax(qval_new[0:3])+np.argmax(qval_new[3:6]))/2
-                    reward += VMG*3
+##                    if not hydro_stall:
+##                        reward += boat_vel_abs + 1
+##                    else: # hydro stalled 
+##                        reward += -1/20*np.rad2deg(h_aoa)
+##                        if R_act != 2 and R_act == last_Ract:
+##                            R_reward += 1 # reward consistency in getting out of irons
+##                        elif R_act == 2: R_reward -= 1
+##                        elif R_act != 2 and last_Ract != 2:
+##                            if Ract != last_Ract:
+##                                R_reward -= 1
+####                        
+##                    reward += gamma*(np.argmax(qval_new[0:3])+np.argmax(qval_new[3:6]))/2
+##                    reward += VMG*3
 ##                    if air_stall_bluff:
 ##                        S_reward -= np.rad2deg(aoa)/80
 ##                    if sail_trim_perc < 1 and np.argmax(qval_new[3:6]) != 2 and luffing: S_reward -= 2
 
-                    if boat_vel_abs/2 > VMG:
-                        R_reward -= 2
-                        if R_act != 2:
-                            R_reward += 1
-                            if R_act == last_Ract : R_reward += 1
-                            else: R_reward -= 1
-
-                    reward += wpt_reward # 10 if ran into waypoint
+##                    if boat_vel_abs/2 > VMG:
+##                        R_reward -= 2
+##                        if R_act != 2:
+##                            R_reward += 1
+##                            if R_act == last_Ract : R_reward += 1
+##                            else: R_reward -= 1
+##
+##                    reward += wpt_reward # 10 if ran into waypoint
                     
                     R_reward += reward ##- 2
                     S_reward += reward #- 2
                         
                     correction[R_act] = R_reward
                     correction[S_act] = S_reward
+
+                    last_action = np.zeros((1,6))
+                    last_action[0,R_act] = 1
+                    last_action[0,S_act] = 1
+
                     
-                    RL_debug += ' R reward:' + str(R_reward) + ' S reward:' + str(S_reward)
+                    
+##                    RL_debug += ' R reward:' + str(R_reward) + ' S reward:' + str(S_reward)
+                    
                     R_reward_hist.append(R_reward)
                     S_reward_hist.append(S_reward)
+                    
+                    
                     wpt_hit_hist.append(wpt_hit)
                 except NameError: pass # first pass
 
                 # reinforce model
-                batchSize = 300
+                batchSize = int(300/6)
                 try:
                     if p_count ==0 and r_count == 0:
                         if Xbatch.shape[0] >= batchSize: # wait to fit model till have a sufficient memory
                             Xbatch = np.roll(Xbatch,1,0)
                             Ybatch = np.roll(Ybatch,1,0)
+                            last_action_list = np.roll(last_action_list,1,0)
                             Xbatch[0,:] = oldX
-                            Ybatch[0,:] = np.reshape(correction,(1,6))
+                            Ybatch[0,:] = np.reshape(qval,(1,6))
+                            last_action_list[0,:] = last_action
+
+                            reward = 0
+                            reward = (Xbatch[batchSize-1,27]-Xbatch[0,27])*3 + wpt_reward # distance based reward
+                            RL_debug += ' reward:' + str(reward)
+                            reward_hist.append(reward)
+                            
+                            Ybatch[last_action_list == 1] = reward
+                            
                             model.fit(Xbatch,Ybatch,batch_size = batchSize, nb_epoch = 1, verbose = 0) # should add custom call back
                         else: # build up model memory
                             Xbatch = np.concatenate((Xbatch,newX),0)
                             Ybatch = np.concatenate((Ybatch,np.reshape(correction,(1,6))),0)
+                            last_action_list = np.concatenate((last_action_list,last_action),0)
                             RL_debug += ' building memory buffer'
                 except NameError: # first pass
                     RL_debug += ' first pass '
                     Xbatch = newX
                     Ybatch = np.reshape(model.predict(newX)[0],(1,6))
+                    last_action_list = last_action
                 oldX = newX
 
                 ## predict and act
@@ -582,9 +618,9 @@ try:
                     if keys[pygame.K_LEFT]: R_act = 0
                     elif keys[pygame.K_RIGHT]: R_act = 1
                     else: R_act = 2 # no action option
-                    if keys[pygame.K_UP] and sail_trim_perc <= 1: S_act = 0
-                    elif keys[pygame.K_DOWN] and sail_trim_perc >= 0: S_act = 1
-                    else: S_act = 2 # no action option
+                    if keys[pygame.K_UP] and sail_trim_perc <= 1: S_act = 3
+                    elif keys[pygame.K_DOWN] and sail_trim_perc >= 0: S_act = 4
+                    else: S_act = 5 # no action option
                 elif (np.random.rand(1)[0] < rand_act_prob and p_count == 0) or r_count > 0: # act randomly
                     if r_count > 0:
                         r_count -= 1
@@ -594,7 +630,7 @@ try:
                         r_count = 0
                         RL_debug +=' random action '
                         R_act = np.random.randint(0,3) # rudder
-                        S_act = np.random.randint(0,3) # sail
+                        S_act = np.random.randint(0,3)+3 # sail
                 else: # choose predicted best action
         ##            print('pred:',qval)
                     if p_count > 0:
@@ -610,8 +646,8 @@ try:
                 if R_act == 0: boat_heading += 1/360*2*np.pi
                 elif R_act == 1: boat_heading -= 1/360*2*np.pi
                 else: pass # no rudder action option
-                if S_act == 0 and sail_trim_perc <= 1: sail_trim_perc += .08
-                elif S_act == 1 and sail_trim_perc >= 0: sail_trim_perc -= .08
+                if S_act == 3 and sail_trim_perc <= 1: sail_trim_perc += .08
+                elif S_act == 4 and sail_trim_perc >= 0: sail_trim_perc -= .08
                 else: pass # no trim action option
 
                 if t == 0 or np.mod(t,10) == 0:
@@ -653,6 +689,8 @@ try:
                 RL_debug = 't:'+str(int(t/(duration*10)))+' ' + RL_debug
                 print(RL_debug)
             else: print(debug)
+
+            if gen_new_wpt: waypoint = gen_waypt()
 except KeyboardInterrupt: pass
     
 ##    gameDisplay.fill(white)
@@ -717,6 +755,7 @@ if RL:
     plt.ion()
     plt.plot(R_reward_hist, 'b',label='rudder reward')
     plt.plot(S_reward_hist, 'g',label='trim reward')
+    plt.plot(reward_hist,'k',label='reward')
     plt.plot(wpt_hit_hist,'r',label='wpt_hit')
     ##plt.title('absolute speed')
     ##plt.xlabel('milliseconds')
